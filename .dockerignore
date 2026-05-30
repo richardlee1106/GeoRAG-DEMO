@@ -1,0 +1,10 @@
+*.gguf
+__pycache__/
+*.py[cod]
+.git/
+.gitignore
+.dockerignore
+.env
+.env.*
+reasonix会话保存/
+*.md

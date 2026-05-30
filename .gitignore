@@ -1,0 +1,26 @@
+# GGUF 模型文件（体积巨大，自行下载）
+*.gguf
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# 开发会话记录
+reasonix会话保存/
+
+# 环境配置
+.env
+.env.*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

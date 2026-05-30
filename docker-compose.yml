@@ -1,0 +1,159 @@
+# =============================================================================
+# GeoRAG-demo — 完整部署编排
+# =============================================================================
+# 使用方式（需先构建 georag-demo 镜像）：
+#   docker compose up -d
+#
+# 需要准备：
+#   1. GGUF 模型文件（三个）
+#   2. llama-cuda:latest 镜像（内置 CUDA + llama-server）
+#   3. NVIDIA 驱动 + nvidia-container-toolkit
+# =============================================================================
+
+services:
+
+  # ── Web UI ─────────────────────────────────────────────────────────────────
+  georag-demo:
+    build: .
+    image: georag-demo:latest
+    container_name: georag-demo
+    ports:
+      - "8000:8000"
+    environment:
+      - LLM_API=http://llm:8080/v1
+      - EMBED_API=http://embed:8082/v1
+      - RERANK_API=http://rerank:8083/v1
+      - SEARXNG_URL=http://searxng:8081/search
+    depends_on:
+      - llm
+      - embed
+      - rerank
+      - searxng
+    restart: unless-stopped
+
+  # ── LLM: Bonsai-8B（需 GPU）───────────────────────────────────────────────
+  llm:
+    image: llama-cuda:latest
+    container_name: georag-llm
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - /media/noroot_richard/E/model/prism-ml/Bonsai-8B-gguf/Bonsai-8B.gguf:/models/Bonsai-8B.gguf
+    environment:
+      - CUDA_VISIBLE_DEVICES=0
+    command:
+      - -m /models/Bonsai-8B.gguf
+      - --host 0.0.0.0
+      - --port 8080
+      - -ngl 99
+      - --ctx-size 8192
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+    profiles:
+      - full
+      - ""  # 默认启用
+
+  # ── Embedding: jina-v5（需要 GPU）─────────────────────────────────────────
+  embed:
+    image: llama-cuda:latest
+    container_name: georag-embed
+    ports:
+      - "127.0.0.1:8082:8082"
+    volumes:
+      - /media/noroot_richard/E/model/jinaai/jina-embeddings-v5-text-small-retrieval/v5-small-retrieval-F16.gguf:/models/jina.gguf
+    environment:
+      - CUDA_VISIBLE_DEVICES=0
+    command:
+      - -m /models/jina.gguf
+      - --host 0.0.0.0
+      - --port 8082
+      - --embeddings
+      - -ngl 99
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+    profiles:
+      - full
+      - ""
+
+  # ── Reranker: bge-v2-m3（需要 GPU）────────────────────────────────────────
+  rerank:
+    image: llama-cuda:latest
+    container_name: georag-rerank
+    ports:
+      - "127.0.0.1:8083:8083"
+    volumes:
+      - /media/noroot_richard/E/model/gpustack/bge-reranker-v2-m3-GGUF/bge-reranker-v2-m3-Q8_0.gguf:/models/bge.gguf
+    environment:
+      - CUDA_VISIBLE_DEVICES=0
+    command:
+      - -m /models/bge.gguf
+      - --host 0.0.0.0
+      - --port 8083
+      - --reranking
+      - --ubatch-size 4096
+      - --batch-size 4096
+      - --no-warmup
+      - -ngl 99
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+    profiles:
+      - full
+      - ""
+
+  # ── SearXNG 搜索引擎 ──────────────────────────────────────────────────────
+  searxng:
+    image: searxng/searxng:latest
+    container_name: georag-searxng
+    ports:
+      - "127.0.0.1:8081:8080"
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:8081/
+      - SEARXNG_REDIS_URL=redis://searxng-redis:6379/0
+    volumes:
+      - searxng-data:/etc/searxng:rw
+    depends_on:
+      - searxng-redis
+    restart: unless-stopped
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+
+  # ── Redis（SearXNG 缓存）──────────────────────────────────────────────────
+  searxng-redis:
+    image: valkey/valkey:8-alpine
+    container_name: georag-redis
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  searxng-data:
+  redis-data:
