@@ -11,6 +11,9 @@ build/
 # 开发会话记录
 reasonix会话保存/
 
+# Docker 导出镜像
+georag-demo.tar
+
 # 环境配置
 .env
 .env.*
